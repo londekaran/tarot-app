@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tarot — Hand Gesture Reading</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=EB+Garamond:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --void:#050510;
+  --deep:#0A0A1E;
+  --nebula:#0D0D2B;
+  --amethyst:#2D1B69;
+  --gold:#C9A84C;
+  --gold-light:#E8C96A;
+  --gold-dim:#7A6030;
+  --moonlight:#E8DCC8;
+  --moonlight-dim:#9B8E7A;
+  --rose:#9B4F8E;
+  --glow:rgba(201,168,76,0.5);
+  --card-w:110px;
+  --card-h:185px;
+}
+
+html,body{width:100%;height:100%;background:var(--void);overflow:hidden;font-family:'EB Garamond',serif;color:var(--moonlight)}
+
+/* ── STARFIELD ── */
+#stars{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+/* ── MAIN LAYOUT ── */
+#app{position:relative;z-index:1;width:100vw;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:space-between}
+
+/* ── TOP BAR ── */
+#topbar{
+  width:100%;display:flex;align-items:center;justify-content:space-between;
+  padding:12px 20px 8px;
+  background:linear-gradient(180deg,rgba(5,5,16,0.95) 0%,transparent 100%);
+}
+#title-block{text-align:left}
+#title-block h1{font-family:'Cinzel',serif;font-size:1.05rem;font-weight:900;letter-spacing:0.18em;background:linear-gradient(135deg,var(--gold),var(--moonlight),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+#title-block p{font-size:0.68rem;color:var(--moonlight-dim);letter-spacing:0.1em;font-style:italic}
+
+#gesture-hint{
+  font-family:'Cinzel',serif;font-size:0.6rem;letter-spacing:0.15em;
+  color:var(--gold-dim);text-align:center;line-height:1.6;
+}
+#gesture-hint span{display:block}
+#gesture-hint .active-hint{color:var(--gold-light)}
+
+/* ── CAMERA VIEW ── */
+#cam-container{
+  position:fixed;bottom:16px;right:16px;z-index:100;
+  width:180px;height:135px;border-radius:8px;overflow:hidden;
+  border:1px solid var(--gold-dim);
+  box-shadow:0 0 20px rgba(0,0,0,0.8);
+}
+#cam-container video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+#cam-overlay{position:absolute;inset:0;pointer-events:none}
+#cam-label{
+  position:absolute;bottom:4px;left:0;right:0;text-align:center;
+  font-family:'Cinzel',serif;font-size:0.5rem;letter-spacing:0.1em;
+  color:var(--gold);text-shadow:0 0 6px rgba(0,0,0,0.9);
+}
+#cam-status{
+  position:absolute;top:5px;left:5px;width:8px;height:8px;border-radius:50%;
+  background:#444;transition:background 0.3s;
+}
+#cam-status.active{background:#4CAF50;box-shadow:0 0 6px #4CAF50}
+#cam-status.detecting{background:var(--gold);box-shadow:0 0 6px var(--gold)}
+
+/* ── HAND CURSOR ── */
+#hand-cursor{
+  position:fixed;z-index:200;pointer-events:none;
+  width:48px;height:48px;margin-left:-24px;margin-top:-24px;
+  display:none;transition:left 0.05s linear,top 0.05s linear;
+}
+#hand-cursor svg{width:100%;height:100%;filter:drop-shadow(0 0 6px var(--gold))}
+
+/* ── CARDS AREA ── */
+#scene{
+  flex:1;width:100%;display:flex;align-items:center;justify-content:center;
+  position:relative;padding:0 40px;overflow:hidden;
+}
+
+/* ── CARD TRACK ── */
+#card-track{
+  display:flex;gap:18px;align-items:center;
+  transition:transform 0.4s cubic-bezier(.4,0,.2,1);
+  user-select:none;
+}
+
+/* ── CARD ── */
+.card{
+  width:var(--card-w);height:var(--card-h);
+  flex-shrink:0;perspective:800px;
+  position:relative;cursor:pointer;
+  transition:transform 0.3s ease,filter 0.3s ease;
+}
+.card-inner{
+  width:100%;height:100%;position:relative;
+  transform-style:preserve-3d;
+  transition:transform 0.7s cubic-bezier(.4,0,.2,1);
+  border-radius:8px;
+}
+.card.flipped .card-inner{transform:rotateY(180deg)}
+
+.card-back,.card-front{
+  position:absolute;inset:0;border-radius:8px;
+  backface-visibility:hidden;overflow:hidden;
+}
+
+/* BACK */
+.card-back{
+  background:linear-gradient(135deg,#1A0D3A 0%,#0D0820 100%);
+  border:1px solid var(--amethyst);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:inset 0 0 20px rgba(45,27,105,0.5);
+}
+.card-back::before{content:'';position:absolute;inset:5px;border:1px solid rgba(201,168,76,0.2);border-radius:5px}
+.card-back::after{content:'✦';font-size:1.8rem;color:rgba(201,168,76,0.25)}
+
+/* FRONT - illustrated style */
+.card-front{
+  transform:rotateY(180deg);
+  background:#F5F0DC;
+  border:2px solid var(--gold-dim);
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:space-between;
+  padding:6px 5px;
+}
+.card-front .cf-top{font-family:'Cinzel',serif;font-size:0.55rem;color:#333;letter-spacing:0.04em;text-align:center}
+.card-front .cf-art{
+  flex:1;width:100%;display:flex;align-items:center;justify-content:center;
+  font-size:3.2rem;line-height:1;
+  background:linear-gradient(160deg,#FFF8E7,#EEE4C8);
+  margin:3px 0;border-radius:3px;
+  position:relative;overflow:hidden;
+}
+.card-front .cf-art::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse at 50% 30%,rgba(255,255,255,0.4),transparent 70%);
+}
+.card-front .cf-bottom{font-family:'Cinzel',serif;font-size:0.55rem;color:#333;letter-spacing:0.04em;text-align:center;line-height:1.3;font-weight:600}
+.card-front .cf-suit{font-size:0.45rem;color:#666;letter-spacing:0.08em;margin-top:1px}
+.card-front.reversed{transform:rotateY(180deg) rotate(180deg)}
+
+/* HOVERED card */
+.card.hovered{
+  transform:translateY(-12px) scale(1.06);
+  filter:drop-shadow(0 0 12px rgba(201,168,76,0.6));
+  z-index:10;
+}
+.card.hovered .card-back{border-color:var(--gold);box-shadow:0 0 20px var(--glow),inset 0 0 20px rgba(45,27,105,0.5)}
+
+/* SELECTED (queued) */
+.card.selected .card-back{
+  border-color:var(--gold-light);
+  box-shadow:0 0 25px rgba(201,168,76,0.7),inset 0 0 20px rgba(45,27,105,0.5);
+}
+.card.selected{transform:translateY(-20px)}
+
+/* ── FOCUS OVERLAY ── */
+#focus-overlay{
+  position:fixed;inset:0;z-index:300;
+  background:rgba(5,5,16,0.92);
+  display:none;align-items:center;justify-content:flex-start;
+  flex-direction:column;padding:24px;
+  backdrop-filter:blur(4px);
+}
+#focus-overlay.open{display:flex}
+
+#focus-card-wrap{
+  width:220px;height:370px;perspective:1000px;
+  flex-shrink:0;margin-bottom:20px;
+}
+#focus-inner{
+  width:100%;height:100%;position:relative;
+  transform-style:preserve-3d;
+  transition:transform 0.9s cubic-bezier(.4,0,.2,1);
+  border-radius:10px;
+}
+#focus-inner.flipped{transform:rotateY(180deg)}
+
+#focus-back,#focus-front{
+  position:absolute;inset:0;border-radius:10px;
+  backface-visibility:hidden;overflow:hidden;
+}
+#focus-back{
+  background:linear-gradient(135deg,#1A0D3A,#0D0820);
+  border:2px solid var(--amethyst);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 40px rgba(45,27,105,0.8);
+}
+#focus-back::before{content:'';position:absolute;inset:8px;border:1px solid rgba(201,168,76,0.25);border-radius:7px}
+#focus-back::after{content:'✦';font-size:3rem;color:rgba(201,168,76,0.2)}
+
+#focus-front{
+  transform:rotateY(180deg);
+  background:#F5F0DC;
+  border:2px solid var(--gold);
+  display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+  padding:10px 8px;
+  box-shadow:0 0 40px rgba(201,168,76,0.4);
+}
+#focus-front.reversed{transform:rotateY(180deg) rotate(180deg)}
+#focus-front .ff-num{font-family:'Cinzel',serif;font-size:0.75rem;color:#333;letter-spacing:0.08em}
+#focus-front .ff-art{flex:1;width:100%;display:flex;align-items:center;justify-content:center;font-size:5.5rem;line-height:1;background:linear-gradient(160deg,#FFF8E7,#EEE4C8);margin:6px 0;border-radius:5px;position:relative;overflow:hidden}
+#focus-front .ff-art::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 30%,rgba(255,255,255,0.5),transparent 70%)}
+#focus-front .ff-name{font-family:'Cinzel',serif;font-size:0.85rem;color:#222;font-weight:700;text-align:center;letter-spacing:0.06em;line-height:1.3}
+#focus-front .ff-suit{font-size:0.6rem;color:#555;letter-spacing:0.1em;margin-top:2px}
+
+#focus-info{text-align:center;max-width:340px}
+#focus-title{font-family:'Cinzel',serif;font-size:1.2rem;letter-spacing:0.15em;color:var(--gold);margin-bottom:4px}
+#focus-suit{font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.2em;color:var(--moonlight-dim);margin-bottom:10px;text-transform:uppercase}
+#focus-orientation{font-family:'Cinzel',serif;font-size:0.6rem;letter-spacing:0.15em;color:var(--rose);margin-bottom:10px;text-transform:uppercase}
+#focus-meaning{font-style:italic;font-size:1rem;color:var(--moonlight-dim);line-height:1.6;margin-bottom:16px}
+
+#focus-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.fa-btn{
+  font-family:'Cinzel',serif;font-size:0.6rem;letter-spacing:0.15em;
+  padding:8px 20px;border:1px solid;cursor:pointer;border-radius:3px;
+  background:transparent;transition:all 0.2s;text-transform:uppercase;
+}
+#btn-keep{border-color:var(--gold);color:var(--gold)}
+#btn-keep:hover{background:rgba(201,168,76,0.12)}
+#btn-close{border-color:rgba(255,255,255,0.15);color:var(--moonlight-dim)}
+#btn-close:hover{border-color:var(--moonlight-dim);color:var(--moonlight)}
+
+/* ── SELECTED READING BAR ── */
+#reading-bar{
+  width:100%;background:linear-gradient(0deg,rgba(5,5,16,0.98) 0%,transparent 100%);
+  padding:10px 20px 14px;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:center;
+  min-height:72px;
+}
+#reading-label{font-family:'Cinzel',serif;font-size:0.6rem;letter-spacing:0.2em;color:var(--gold-dim);flex-shrink:0}
+#reading-cards{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
+.reading-thumb{
+  width:36px;height:60px;border-radius:4px;
+  background:linear-gradient(135deg,#1A0D3A,#0D0820);
+  border:1px solid var(--gold);
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.1rem;
+  box-shadow:0 0 8px rgba(201,168,76,0.3);
+  position:relative;overflow:hidden;
+  cursor:pointer;
+  animation:thumbIn 0.3s ease;
+}
+.reading-thumb.face-up{background:#F5F0DC;border-color:var(--gold)}
+@keyframes thumbIn{from{transform:scale(0.5);opacity:0}to{transform:scale(1);opacity:1}}
+.reading-thumb .rt-remove{
+  position:absolute;inset:0;background:rgba(0,0,0,0.5);
+  display:none;align-items:center;justify-content:center;
+  font-size:1rem;color:#fff;font-style:normal;
+}
+.reading-thumb:hover .rt-remove{display:flex}
+
+#btn-reveal-all{
+  font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.18em;
+  padding:9px 22px;border:none;cursor:pointer;border-radius:3px;
+  background:linear-gradient(135deg,var(--gold-dim),var(--gold));
+  color:var(--void);text-transform:uppercase;
+  box-shadow:0 0 16px rgba(201,168,76,0.35);
+  transition:all 0.2s;flex-shrink:0;
+}
+#btn-reveal-all:hover{box-shadow:0 0 28px rgba(201,168,76,0.6);transform:translateY(-1px)}
+#btn-reveal-all:disabled{opacity:0.3;cursor:default;box-shadow:none;transform:none}
+#btn-reset-read{
+  font-family:'Cinzel',serif;font-size:0.6rem;letter-spacing:0.15em;
+  padding:9px 16px;border:1px solid rgba(255,255,255,0.1);cursor:pointer;
+  border-radius:3px;background:transparent;color:var(--moonlight-dim);
+  transition:all 0.2s;flex-shrink:0;text-transform:uppercase;
+}
+#btn-reset-read:hover{border-color:var(--moonlight-dim);color:var(--moonlight)}
+
+/* ── REVEAL SPREAD ── */
+#spread-overlay{
+  position:fixed;inset:0;z-index:400;
+  background:rgba(5,5,16,0.96);
+  display:none;flex-direction:column;align-items:center;
+  overflow-y:auto;padding:30px 20px 40px;
+  backdrop-filter:blur(6px);
+}
+#spread-overlay.open{display:flex}
+#spread-title{font-family:'Cinzel',serif;font-size:1rem;letter-spacing:0.3em;color:var(--gold);margin-bottom:6px;text-align:center}
+#spread-sub{font-size:0.8rem;font-style:italic;color:var(--moonlight-dim);margin-bottom:24px;text-align:center}
+#spread-grid{display:flex;flex-wrap:wrap;gap:20px;justify-content:center;margin-bottom:24px}
+.spread-item{display:flex;flex-direction:column;align-items:center;gap:8px;max-width:130px}
+.spread-item .si-pos{font-family:'Cinzel',serif;font-size:0.55rem;letter-spacing:0.15em;color:var(--gold-dim);text-transform:uppercase}
+
+.spread-card-wrap{width:100px;height:168px;perspective:800px}
+.spread-inner{width:100%;height:100%;position:relative;transform-style:preserve-3d;border-radius:7px;transition:transform 0.8s cubic-bezier(.4,0,.2,1)}
+.spread-inner.flipped{transform:rotateY(180deg)}
+.spread-back,.spread-front{position:absolute;inset:0;border-radius:7px;backface-visibility:hidden;overflow:hidden}
+.spread-back{background:linear-gradient(135deg,#1A0D3A,#0D0820);border:1px solid var(--amethyst);display:flex;align-items:center;justify-content:center}
+.spread-back::after{content:'✦';font-size:1.6rem;color:rgba(201,168,76,0.2)}
+.spread-front{transform:rotateY(180deg);background:#F5F0DC;border:1px solid var(--gold-dim);display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:6px 5px}
+.spread-front.reversed{transform:rotateY(180deg) rotate(180deg)}
+.spread-front .sf-num{font-family:'Cinzel',serif;font-size:0.5rem;color:#333}
+.spread-front .sf-art{flex:1;width:100%;display:flex;align-items:center;justify-content:center;font-size:2.6rem;background:linear-gradient(160deg,#FFF8E7,#EEE4C8);margin:3px 0;border-radius:3px}
+.spread-front .sf-name{font-family:'Cinzel',serif;font-size:0.5rem;color:#222;font-weight:700;text-align:center;line-height:1.3}
+
+.spread-item .si-name{font-family:'Cinzel',serif;font-size:0.75rem;color:var(--moonlight);text-align:center;letter-spacing:0.06em;font-weight:600}
+.spread-item .si-rev{font-family:'Cinzel',serif;font-size:0.5rem;color:var(--rose);letter-spacing:0.1em;text-transform:uppercase}
+.spread-item .si-meaning{font-style:italic;font-size:0.82rem;color:var(--moonlight-dim);text-align:center;line-height:1.5}
+
+#btn-new-reading{
+  font-family:'Cinzel',serif;font-size:0.72rem;letter-spacing:0.2em;
+  padding:12px 32px;border:none;cursor:pointer;border-radius:3px;
+  background:linear-gradient(135deg,var(--gold-dim),var(--gold));color:var(--void);
+  text-transform:uppercase;box-shadow:0 0 20px rgba(201,168,76,0.4);
+  transition:all 0.2s;
+}
+#btn-new-reading:hover{box-shadow:0 0 36px rgba(201,168,76,0.7);transform:translateY(-2px)}
+
+/* ── SCROLL ARROWS ── */
+.scroll-arrow{
+  position:absolute;top:50%;transform:translateY(-50%);
+  width:36px;height:36px;border-radius:50%;
+  background:rgba(201,168,76,0.08);border:1px solid var(--gold-dim);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:var(--gold-dim);font-size:1.1rem;
+  transition:all 0.2s;z-index:10;
+  user-select:none;
+}
+.scroll-arrow:hover{background:rgba(201,168,76,0.18);color:var(--gold);border-color:var(--gold)}
+#arrow-left{left:6px}
+#arrow-right{right:6px}
+
+/* ── DWELL RING ── */
+#dwell-ring{
+  position:fixed;z-index:201;pointer-events:none;
+  width:56px;height:56px;margin-left:-28px;margin-top:-28px;
+  display:none;
+}
+#dwell-ring svg{width:100%;height:100%}
+#dwell-circle{
+  fill:none;stroke:var(--gold);stroke-width:3;
+  stroke-dasharray:138;stroke-dashoffset:138;
+  transform-origin:50% 50%;transform:rotate(-90deg);
+  transition:stroke-dashoffset 0.05s linear;
+}
+
+/* ── LOADING ── */
+#loading{
+  position:fixed;inset:0;z-index:999;
+  background:var(--void);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;
+}
+#loading h2{font-family:'Cinzel',serif;font-size:1.2rem;letter-spacing:0.2em;color:var(--gold)}
+#loading p{font-size:0.85rem;font-style:italic;color:var(--moonlight-dim);text-align:center;max-width:300px;line-height:1.6}
+.loader-ring{width:48px;height:48px;border:2px solid rgba(201,168,76,0.1);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#btn-skip-cam{
+  font-family:'Cinzel',serif;font-size:0.6rem;letter-spacing:0.15em;
+  padding:8px 20px;border:1px solid var(--gold-dim);background:transparent;
+  color:var(--moonlight-dim);cursor:pointer;border-radius:3px;margin-top:8px;
+  transition:all 0.2s;text-transform:uppercase;
+}
+#btn-skip-cam:hover{border-color:var(--gold);color:var(--moonlight)}
+
+/* ── MOUSE CONTROL TOGGLE ── */
+#ctrl-toggle{
+  position:fixed;top:14px;right:14px;z-index:500;
+  font-family:'Cinzel',serif;font-size:0.55rem;letter-spacing:0.12em;
+  padding:5px 12px;border:1px solid var(--gold-dim);background:rgba(5,5,16,0.8);
+  color:var(--moonlight-dim);cursor:pointer;border-radius:3px;
+  transition:all 0.2s;text-transform:uppercase;
+}
+#ctrl-toggle:hover,#ctrl-toggle.mouse-mode{border-color:var(--gold);color:var(--gold)}
+
+/* ── SCROLL BAR ── */
+#scroll-indicator{
+  position:absolute;bottom:4px;left:50%;transform:translateX(-50%);
+  display:flex;gap:4px;
+}
+.scroll-dot{width:4px;height:4px;border-radius:50%;background:var(--gold-dim);opacity:0.4;transition:opacity 0.2s}
+.scroll-dot.active{opacity:1;background:var(--gold)}
+</style>
+</head>
+<body>
+
+<canvas id="stars"></canvas>
+
+<!-- Loading screen -->
+<div id="loading">
+  <div class="loader-ring"></div>
+  <h2>Awakening the Veil</h2>
+  <p>Initialising hand tracking… please allow camera access when prompted.</p>
+  <button id="btn-skip-cam">Use Mouse Instead</button>
+</div>
+
+<!-- Hand cursor -->
+<div id="hand-cursor">
+  <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="24" cy="24" r="20" stroke="#C9A84C" stroke-width="1.5" opacity="0.4"/>
+    <circle cx="24" cy="24" r="6" fill="#C9A84C" opacity="0.9"/>
+    <line x1="24" y1="4" x2="24" y2="12" stroke="#C9A84C" stroke-width="1.5" opacity="0.6"/>
+    <line x1="24" y1="36" x2="24" y2="44" stroke="#C9A84C" stroke-width="1.5" opacity="0.6"/>
+    <line x1="4" y1="24" x2="12" y2="24" stroke="#C9A84C" stroke-width="1.5" opacity="0.6"/>
+    <line x1="36" y1="24" x2="44" y2="24" stroke="#C9A84C" stroke-width="1.5" opacity="0.6"/>
+  </svg>
+</div>
+
+<!-- Dwell ring -->
+<div id="dwell-ring">
+  <svg viewBox="0 0 56 56">
+    <circle cx="28" cy="28" r="22" fill="none" stroke="rgba(201,168,76,0.15)" stroke-width="3"/>
+    <circle id="dwell-circle" cx="28" cy="28" r="22"/>
+  </svg>
+</div>
+
+<!-- Camera view -->
+<div id="cam-container">
+  <video id="video" playsinline autoplay muted></video>
+  <canvas id="cam-overlay"></canvas>
+  <div id="cam-status"></div>
+  <div id="cam-label">✦ HAND TRACKING ✦</div>
+</div>
+
+<!-- Mouse/Gesture toggle -->
+<button id="ctrl-toggle">☽ Mouse Mode</button>
+
+<!-- Main App -->
+<div id="app">
+  <div id="topbar">
+    <div id="title-block">
+      <h1>✦ Tarot of the Cosmic Veil</h1>
+      <p>Point your finger to hover · Dwell to select</p>
+    </div>
+    <div id="gesture-hint">
+      <span>☝ Point to hover card</span>
+      <span class="active-hint">⏱ Hold 1.5s to select</span>
+      <span>✌ Two fingers to scroll</span>
+    </div>
+  </div>
+
+  <div id="scene">
+    <div class="scroll-arrow" id="arrow-left">‹</div>
+    <div id="card-track"></div>
+    <div class="scroll-arrow" id="arrow-right">›</div>
+    <div id="scroll-indicator"></div>
+  </div>
+
+  <div id="reading-bar">
+    <div id="reading-label">✦ SELECTED CARDS</div>
+    <div id="reading-cards"></div>
+    <button id="btn-reveal-all" disabled>Reveal Reading</button>
+    <button id="btn-reset-read">Clear</button>
+  </div>
+</div>
+
+<!-- Focus overlay (single card view) -->
+<div id="focus-overlay">
+  <div id="focus-card-wrap">
+    <div id="focus-inner">
+      <div id="focus-back"></div>
+      <div id="focus-front">
+        <div class="ff-num" id="ff-num"></div>
+        <div class="ff-art" id="ff-art"></div>
+        <div class="ff-name" id="ff-name"></div>
+        <div class="ff-suit" id="ff-suit"></div>
+      </div>
+    </div>
+  </div>
+  <div id="focus-info">
+    <div id="focus-title"></div>
+    <div id="focus-suit"></div>
+    <div id="focus-orientation"></div>
+    <div id="focus-meaning"></div>
+  </div>
+  <div id="focus-actions">
+    <button class="fa-btn" id="btn-keep">✦ Add to Reading</button>
+    <button class="fa-btn" id="btn-close">✕ Close</button>
+  </div>
+</div>
+
+<!-- Spread reveal overlay -->
+<div id="spread-overlay">
+  <div id="spread-title">✦ The Reading ✦</div>
+  <div id="spread-sub">The cards have spoken</div>
+  <div id="spread-grid"></div>
+  <button id="btn-new-reading">Begin New Reading</button>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// TAROT DATA
+// ══════════════════════════════════════════════════════════════════════════════
+const TAROT = [
+  {id:0,name:'The Fool',suit:'Major Arcana',number:'0',symbol:'🌟',upright:'New beginnings, spontaneity, innocence, free spirit',reversed:'Recklessness, naivety, poor risk-taking'},
+  {id:1,name:'The Magician',suit:'Major Arcana',number:'I',symbol:'🪄',upright:'Manifestation, resourcefulness, power, inspired action',reversed:'Manipulation, poor planning, untapped talents'},
+  {id:2,name:'High Priestess',suit:'Major Arcana',number:'II',symbol:'🌙',upright:'Intuition, sacred knowledge, divine feminine, subconscious',reversed:'Secrets, disconnected intuition, withdrawal'},
+  {id:3,name:'The Empress',suit:'Major Arcana',number:'III',symbol:'🌸',upright:'Femininity, beauty, nature, nurturing, abundance',reversed:'Creative block, dependence, emptiness'},
+  {id:4,name:'The Emperor',suit:'Major Arcana',number:'IV',symbol:'⚔️',upright:'Authority, structure, stability, a father figure',reversed:'Domination, rigidity, excessive control'},
+  {id:5,name:'The Hierophant',suit:'Major Arcana',number:'V',symbol:'🏛️',upright:'Spiritual wisdom, tradition, conformity, morality',reversed:'Personal beliefs, challenging tradition, freedom'},
+  {id:6,name:'The Lovers',suit:'Major Arcana',number:'VI',symbol:'💞',upright:'Love, harmony, relationships, values, choices',reversed:'Disharmony, imbalance, misaligned values'},
+  {id:7,name:'The Chariot',suit:'Major Arcana',number:'VII',symbol:'🏆',upright:'Control, willpower, success, determination',reversed:'Lack of direction, self-discipline needed'},
+  {id:8,name:'Strength',suit:'Major Arcana',number:'VIII',symbol:'🦁',upright:'Strength, courage, patience, compassion',reversed:'Self-doubt, raw emotion, low energy'},
+  {id:9,name:'The Hermit',suit:'Major Arcana',number:'IX',symbol:'🕯️',upright:'Soul-searching, introspection, inner guidance',reversed:'Isolation, loneliness, lost your way'},
+  {id:10,name:'Wheel of Fortune',suit:'Major Arcana',number:'X',symbol:'☸️',upright:'Good luck, karma, life cycles, destiny',reversed:'Bad luck, resistance to change'},
+  {id:11,name:'Justice',suit:'Major Arcana',number:'XI',symbol:'⚖️',upright:'Justice, fairness, truth, cause and effect',reversed:'Unfairness, dishonesty, lack of accountability'},
+  {id:12,name:'The Hanged Man',suit:'Major Arcana',number:'XII',symbol:'🙃',upright:'Pause, surrender, letting go, new perspectives',reversed:'Delays, resistance, indecision'},
+  {id:13,name:'Death',suit:'Major Arcana',number:'XIII',symbol:'🌑',upright:'Endings, transformation, transition, change',reversed:'Resistance to change, inner transformation'},
+  {id:14,name:'Temperance',suit:'Major Arcana',number:'XIV',symbol:'🌊',upright:'Balance, moderation, patience, purpose',reversed:'Imbalance, excess, self-healing needed'},
+  {id:15,name:'The Devil',suit:'Major Arcana',number:'XV',symbol:'🔗',upright:'Shadow self, attachment, addiction, restriction',reversed:'Releasing limiting beliefs, detachment'},
+  {id:16,name:'The Tower',suit:'Major Arcana',number:'XVI',symbol:'⚡',upright:'Sudden change, upheaval, chaos, revelation',reversed:'Personal transformation, averting disaster'},
+  {id:17,name:'The Star',suit:'Major Arcana',number:'XVII',symbol:'⭐',upright:'Hope, faith, purpose, renewal, spirituality',reversed:'Lack of faith, despair, disconnection'},
+  {id:18,name:'The Moon',suit:'Major Arcana',number:'XVIII',symbol:'🌛',upright:'Illusion, fear, the unconscious, confusion',reversed:'Release of fear, repressed emotion'},
+  {id:19,name:'The Sun',suit:'Major Arcana',number:'XIX',symbol:'☀️',upright:'Positivity, fun, warmth, success, vitality',reversed:'Feeling down, overly optimistic, inner child'},
+  {id:20,name:'Judgement',suit:'Major Arcana',number:'XX',symbol:'📯',upright:'Judgement, rebirth, inner calling, absolution',reversed:'Self-doubt, ignoring the call, inner critic'},
+  {id:21,name:'The World',suit:'Major Arcana',number:'XXI',symbol:'🌍',upright:'Completion, integration, accomplishment, travel',reversed:'Seeking closure, delays, short-cuts'},
+  // WANDS
+  {id:22,name:'Ace of Wands',suit:'Wands',number:'Ace',symbol:'🔥',upright:'Inspiration, new opportunities, growth, potential',reversed:'Emerging idea, lack of direction'},
+  {id:23,name:'Two of Wands',suit:'Wands',number:'2',symbol:'🔥',upright:'Future planning, progress, discovery, decisions',reversed:'Personal goals, fear of unknown'},
+  {id:24,name:'Three of Wands',suit:'Wands',number:'3',symbol:'🔥',upright:'Progress, expansion, foresight, new horizons',reversed:'Playing it safe, unexpected delays'},
+  {id:25,name:'Four of Wands',suit:'Wands',number:'4',symbol:'🔥',upright:'Celebration, joy, harmony, homecoming',reversed:'Personal celebration, inner harmony'},
+  {id:26,name:'Five of Wands',suit:'Wands',number:'5',symbol:'🔥',upright:'Conflict, competition, tension, diversity',reversed:'Inner conflict, avoiding confrontation'},
+  {id:27,name:'Six of Wands',suit:'Wands',number:'6',symbol:'🔥',upright:'Success, recognition, progress, confidence',reversed:'Private achievement, fall from grace'},
+  {id:28,name:'Seven of Wands',suit:'Wands',number:'7',symbol:'🔥',upright:'Challenge, competition, perseverance',reversed:'Exhaustion, giving up, overwhelmed'},
+  {id:29,name:'Eight of Wands',suit:'Wands',number:'8',symbol:'🔥',upright:'Movement, fast change, action, alignment',reversed:'Delays, frustration, resisting change'},
+  {id:30,name:'Nine of Wands',suit:'Wands',number:'9',symbol:'🔥',upright:'Resilience, persistence, boundaries',reversed:'Struggle, overwhelm, defensive'},
+  {id:31,name:'Ten of Wands',suit:'Wands',number:'10',symbol:'🔥',upright:'Burden, extra responsibility, hard work',reversed:'Carrying the burden, delegation, release'},
+  {id:32,name:'Page of Wands',suit:'Wands',number:'Page',symbol:'🔥',upright:'Exploration, excitement, adventure, fresh ideas',reversed:'Redirecting energy, setbacks'},
+  {id:33,name:'Knight of Wands',suit:'Wands',number:'Knight',symbol:'🔥',upright:'Energy, passion, adventure, impulsiveness',reversed:'Haste, scattered energy, delays'},
+  {id:34,name:'Queen of Wands',suit:'Wands',number:'Queen',symbol:'🔥',upright:'Courage, confidence, independence, determination',reversed:'Self-confidence needed, introverted'},
+  {id:35,name:'King of Wands',suit:'Wands',number:'King',symbol:'🔥',upright:'Natural leader, vision, entrepreneur, honour',reversed:'Impulsiveness, ruthless, high expectations'},
+  // CUPS
+  {id:36,name:'Ace of Cups',suit:'Cups',number:'Ace',symbol:'💧',upright:'Love, new relationships, compassion, creativity',reversed:'Self-love, repressed emotions'},
+  {id:37,name:'Two of Cups',suit:'Cups',number:'2',symbol:'💧',upright:'Unified love, partnership, mutual attraction',reversed:'Break-ups, disharmony, distrust'},
+  {id:38,name:'Three of Cups',suit:'Cups',number:'3',symbol:'💧',upright:'Celebration, friendship, creativity, collaborations',reversed:'Independence, alone time'},
+  {id:39,name:'Four of Cups',suit:'Cups',number:'4',symbol:'💧',upright:'Meditation, contemplation, apathy, reevaluation',reversed:'Retreat, checking in, realignment'},
+  {id:40,name:'Five of Cups',suit:'Cups',number:'5',symbol:'💧',upright:'Regret, failure, disappointment, pessimism',reversed:'Forgiveness, moving on'},
+  {id:41,name:'Six of Cups',suit:'Cups',number:'6',symbol:'💧',upright:'Revisiting the past, childhood memories, joy',reversed:'Living in the past, forgiveness'},
+  {id:42,name:'Seven of Cups',suit:'Cups',number:'7',symbol:'💧',upright:'Opportunities, choices, wishful thinking',reversed:'Overwhelmed by choices, alignment'},
+  {id:43,name:'Eight of Cups',suit:'Cups',number:'8',symbol:'💧',upright:'Disappointment, withdrawal, escapism',reversed:'Indecision, drifting, try again'},
+  {id:44,name:'Nine of Cups',suit:'Cups',number:'9',symbol:'💧',upright:'Contentment, satisfaction, wish come true',reversed:'Inner happiness, materialism'},
+  {id:45,name:'Ten of Cups',suit:'Cups',number:'10',symbol:'💧',upright:'Divine love, harmony, blissful relationships',reversed:'Disconnection, struggling relationships'},
+  {id:46,name:'Page of Cups',suit:'Cups',number:'Page',symbol:'💧',upright:'Creative opportunities, intuitive messages',reversed:'Doubting intuition, creative blocks'},
+  {id:47,name:'Knight of Cups',suit:'Cups',number:'Knight',symbol:'💧',upright:'Creativity, romance, charm, imagination',reversed:'Overactive imagination, moody'},
+  {id:48,name:'Queen of Cups',suit:'Cups',number:'Queen',symbol:'💧',upright:'Compassionate, intuitive, emotionally stable',reversed:'Self-care, inner feelings, co-dependency'},
+  {id:49,name:'King of Cups',suit:'Cups',number:'King',symbol:'💧',upright:'Emotionally balanced, compassionate, diplomatic',reversed:'Moodiness, emotional manipulation'},
+  // SWORDS
+  {id:50,name:'Ace of Swords',suit:'Swords',number:'Ace',symbol:'🗡️',upright:'Breakthroughs, clarity, new ideas, success',reversed:'Inner clarity, clouded judgement'},
+  {id:51,name:'Two of Swords',suit:'Swords',number:'2',symbol:'🗡️',upright:'Difficult decisions, impasse, avoidance',reversed:'Confusion, information overload, stalemate'},
+  {id:52,name:'Three of Swords',suit:'Swords',number:'3',symbol:'🗡️',upright:'Heartbreak, emotional pain, sorrow, grief',reversed:'Releasing pain, optimism, forgiveness'},
+  {id:53,name:'Four of Swords',suit:'Swords',number:'4',symbol:'🗡️',upright:'Rest, meditation, contemplation, recuperation',reversed:'Burnout, exhaustion, stagnation'},
+  {id:54,name:'Five of Swords',suit:'Swords',number:'5',symbol:'🗡️',upright:'Conflict, defeat, winning at all costs',reversed:'Reconciliation, past resentment'},
+  {id:55,name:'Six of Swords',suit:'Swords',number:'6',symbol:'🗡️',upright:'Transition, change, releasing baggage',reversed:'Resistance to change, unfinished business'},
+  {id:56,name:'Seven of Swords',suit:'Swords',number:'7',symbol:'🗡️',upright:'Betrayal, deception, acting strategically',reversed:'Imposter syndrome, keeping secrets'},
+  {id:57,name:'Eight of Swords',suit:'Swords',number:'8',symbol:'🗡️',upright:'Restriction, negative thoughts, victim mentality',reversed:'Releasing limiting beliefs, inner critic'},
+  {id:58,name:'Nine of Swords',suit:'Swords',number:'9',symbol:'🗡️',upright:'Anxiety, worry, fear, depression, nightmares',reversed:'Deep-seated fears, releasing worry'},
+  {id:59,name:'Ten of Swords',suit:'Swords',number:'10',symbol:'🗡️',upright:'Painful endings, betrayal, loss, crisis',reversed:'Recovery, regeneration, resisting endings'},
+  {id:60,name:'Page of Swords',suit:'Swords',number:'Page',symbol:'🗡️',upright:'New ideas, curiosity, thirst for knowledge',reversed:'Self-expression, haphazard action'},
+  {id:61,name:'Knight of Swords',suit:'Swords',number:'Knight',symbol:'🗡️',upright:'Ambitious, action-oriented, fast-thinking',reversed:'Restless, impulsive, burn-out'},
+  {id:62,name:'Queen of Swords',suit:'Swords',number:'Queen',symbol:'🗡️',upright:'Independent, clear boundaries, direct',reversed:'Easily influenced, cold-hearted'},
+  {id:63,name:'King of Swords',suit:'Swords',number:'King',symbol:'🗡️',upright:'Mental clarity, authority, truth',reversed:'Misuse of power, manipulation'},
+  // PENTACLES
+  {id:64,name:'Ace of Pentacles',suit:'Pentacles',number:'Ace',symbol:'🪙',upright:'New financial opportunity, manifestation, abundance',reversed:'Lost opportunity, lack of planning'},
+  {id:65,name:'Two of Pentacles',suit:'Pentacles',number:'2',symbol:'🪙',upright:'Multiple priorities, time management, adaptability',reversed:'Disorganisation, over-committed'},
+  {id:66,name:'Three of Pentacles',suit:'Pentacles',number:'3',symbol:'🪙',upright:'Teamwork, collaboration, learning, implementation',reversed:'Disharmony, working alone'},
+  {id:67,name:'Four of Pentacles',suit:'Pentacles',number:'4',symbol:'🪙',upright:'Saving money, security, conservatism',reversed:'Over-spending, greed, self-protection'},
+  {id:68,name:'Five of Pentacles',suit:'Pentacles',number:'5',symbol:'🪙',upright:'Financial loss, poverty, isolation, worry',reversed:'Recovery, charity, improving mindset'},
+  {id:69,name:'Six of Pentacles',suit:'Pentacles',number:'6',symbol:'🪙',upright:'Giving, sharing wealth, generosity, charity',reversed:'Unpaid debts, one-sided charity'},
+  {id:70,name:'Seven of Pentacles',suit:'Pentacles',number:'7',symbol:'🪙',upright:'Long-term view, perseverance, investment',reversed:'Lack of long-term vision, limited reward'},
+  {id:71,name:'Eight of Pentacles',suit:'Pentacles',number:'8',symbol:'🪙',upright:'Apprenticeship, mastery, skill development',reversed:'Perfectionism, misdirected activity'},
+  {id:72,name:'Nine of Pentacles',suit:'Pentacles',number:'9',symbol:'🪙',upright:'Abundance, luxury, financial independence',reversed:'Over-investment in work, hustle culture'},
+  {id:73,name:'Ten of Pentacles',suit:'Pentacles',number:'10',symbol:'🪙',upright:'Wealth, family, long-term success, security',reversed:'Financial failure, dark side of wealth'},
+  {id:74,name:'Page of Pentacles',suit:'Pentacles',number:'Page',symbol:'🪙',upright:'Manifestation, financial opportunity, skill development',reversed:'Procrastination, lack of progress'},
+  {id:75,name:'Knight of Pentacles',suit:'Pentacles',number:'Knight',symbol:'🪙',upright:'Hard work, productivity, routine, conservatism',reversed:'Feeling stuck, boredom, perfectionism'},
+  {id:76,name:'Queen of Pentacles',suit:'Pentacles',number:'Queen',symbol:'🪙',upright:'Nurturing, practical, financial providing',reversed:'Financial independence, work-home conflict'},
+  {id:77,name:'King of Pentacles',suit:'Pentacles',number:'King',symbol:'🪙',upright:'Wealth, business, leadership, security, abundance',reversed:'Financially inept, obsessed with wealth'},
+];
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════════════════════
+let shuffled = [];
+let selectedCards = [];   // cards added to reading
+let focusedCardIndex = -1; // index in shuffled currently in focus
+let mouseMode = false;
+let trackOffset = 0;
+const VISIBLE_CARDS = 7; // how many fit at once conceptually
+let hoveredIndex = -1;
+let dwellIndex = -1;
+let dwellTimer = null;
+let dwellProgress = 0;
+let dwellInterval = null;
+const DWELL_DURATION = 1500; // ms
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STARFIELD
+// ══════════════════════════════════════════════════════════════════════════════
+(function(){
+  const c=document.getElementById('stars'),ctx=c.getContext('2d');
+  let W,H,stars=[];
+  function resize(){W=c.width=window.innerWidth;H=c.height=window.innerHeight}
+  function make(){stars=[];for(let i=0;i<200;i++)stars.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.1+0.2,a:Math.random(),da:(Math.random()-0.5)*0.003})}
+  function draw(){ctx.clearRect(0,0,W,H);stars.forEach(s=>{s.a+=s.da;if(s.a<0.1)s.da=Math.abs(s.da);if(s.a>1)s.da=-Math.abs(s.da);ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fillStyle=`rgba(232,220,200,${s.a})`;ctx.fill()});requestAnimationFrame(draw)}
+  resize();make();draw();window.addEventListener('resize',()=>{resize();make()});
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SHUFFLE & RENDER
+// ══════════════════════════════════════════════════════════════════════════════
+function shuffle(arr){
+  const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a;
+}
+
+function buildDeck(){
+  shuffled=shuffle(TAROT).map(c=>({...c,isReversed:Math.random()<0.3}));
+  renderDeck();
+  buildScrollDots();
+}
+
+function renderDeck(){
+  const track=document.getElementById('card-track');
+  track.innerHTML='';
+  shuffled.forEach((card,i)=>{
+    const el=document.createElement('div');
+    el.className='card';
+    el.dataset.index=i;
+    el.innerHTML=`
+      <div class="card-inner">
+        <div class="card-back"></div>
+        <div class="card-front ${card.isReversed?'reversed':''}">
+          <div class="cf-top">${card.number}</div>
+          <div class="cf-art">${card.symbol}</div>
+          <div class="cf-bottom">${card.name}</div>
+          <div class="cf-suit">${card.suit.charAt(0)}</div>
+        </div>
+      </div>`;
+    el.addEventListener('click',()=>openFocus(i));
+    track.appendChild(el);
+  });
+  applyScroll(0,false);
+}
+
+function buildScrollDots(){
+  const pages=Math.ceil(shuffled.length/VISIBLE_CARDS);
+  const ind=document.getElementById('scroll-indicator');
+  ind.innerHTML='';
+  for(let i=0;i<Math.min(pages,12);i++){
+    const d=document.createElement('div');
+    d.className='scroll-dot'+(i===0?' active':'');
+    ind.appendChild(d);
+  }
+}
+
+function updateScrollDots(){
+  const page=Math.floor(trackOffset/VISIBLE_CARDS);
+  document.querySelectorAll('.scroll-dot').forEach((d,i)=>{
+    d.classList.toggle('active',i===page);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SCROLL
+// ══════════════════════════════════════════════════════════════════════════════
+function applyScroll(delta,animate=true){
+  const max=Math.max(0,shuffled.length-VISIBLE_CARDS);
+  trackOffset=Math.max(0,Math.min(max,trackOffset+delta));
+  const track=document.getElementById('card-track');
+  const cardW=130; // card width + gap
+  if(!animate)track.style.transition='none';
+  else track.style.transition='transform 0.4s cubic-bezier(.4,0,.2,1)';
+  track.style.transform=`translateX(-${trackOffset*cardW}px)`;
+  updateScrollDots();
+  if(!animate)setTimeout(()=>track.style.transition='',50);
+}
+
+document.getElementById('arrow-left').addEventListener('click',()=>applyScroll(-3));
+document.getElementById('arrow-right').addEventListener('click',()=>applyScroll(3));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FOCUS OVERLAY
+// ══════════════════════════════════════════════════════════════════════════════
+function openFocus(index){
+  const card=shuffled[index];
+  focusedCardIndex=index;
+  document.getElementById('ff-num').textContent=card.number;
+  document.getElementById('ff-art').textContent=card.symbol;
+  document.getElementById('ff-name').textContent=card.name;
+  document.getElementById('ff-suit').textContent=card.suit;
+  const front=document.getElementById('focus-front');
+  if(card.isReversed)front.classList.add('reversed');
+  else front.classList.remove('reversed');
+  document.getElementById('focus-title').textContent=card.name;
+  document.getElementById('focus-suit').textContent=`${card.suit} · ${card.number}`;
+  document.getElementById('focus-orientation').textContent=card.isReversed?'↻ Reversed':'↑ Upright';
+  document.getElementById('focus-meaning').textContent=card.isReversed?card.reversed:card.upright;
+
+  const overlay=document.getElementById('focus-overlay');
+  overlay.classList.add('open');
+
+  // flip after delay
+  const inner=document.getElementById('focus-inner');
+  inner.classList.remove('flipped');
+  setTimeout(()=>inner.classList.add('flipped'),300);
+}
+
+document.getElementById('btn-close').addEventListener('click',()=>{
+  document.getElementById('focus-overlay').classList.remove('open');
+  const inner=document.getElementById('focus-inner');
+  inner.classList.remove('flipped');
+  focusedCardIndex=-1;
+});
+
+document.getElementById('btn-keep').addEventListener('click',()=>{
+  if(focusedCardIndex<0)return;
+  const card=shuffled[focusedCardIndex];
+  if(selectedCards.find(c=>c.id===card.id))return; // already added
+  selectedCards.push({...card,deckIndex:focusedCardIndex});
+  renderReadingBar();
+  document.getElementById('focus-overlay').classList.remove('open');
+  // mark card in deck
+  const el=document.querySelector(`.card[data-index="${focusedCardIndex}"]`);
+  if(el)el.classList.add('selected');
+  focusedCardIndex=-1;
+});
+
+function renderReadingBar(){
+  const container=document.getElementById('reading-cards');
+  container.innerHTML='';
+  selectedCards.forEach((card,i)=>{
+    const thumb=document.createElement('div');
+    thumb.className='reading-thumb face-up';
+    thumb.title=card.name;
+    thumb.innerHTML=`${card.symbol}<div class="rt-remove">✕</div>`;
+    thumb.addEventListener('click',()=>removeFromReading(i));
+    container.appendChild(thumb);
+  });
+  document.getElementById('btn-reveal-all').disabled=selectedCards.length===0;
+}
+
+function removeFromReading(i){
+  const card=selectedCards[i];
+  const el=document.querySelector(`.card[data-index="${card.deckIndex}"]`);
+  if(el)el.classList.remove('selected');
+  selectedCards.splice(i,1);
+  renderReadingBar();
+}
+
+document.getElementById('btn-reset-read').addEventListener('click',()=>{
+  selectedCards=[];
+  document.querySelectorAll('.card.selected').forEach(el=>el.classList.remove('selected'));
+  renderReadingBar();
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// REVEAL SPREAD
+// ══════════════════════════════════════════════════════════════════════════════
+const SPREAD_POS=['The Card','Past','Present','Future','Foundation','Situation','Challenge','Near Future','Hopes & Fears','Outcome'];
+
+document.getElementById('btn-reveal-all').addEventListener('click',()=>{
+  const grid=document.getElementById('spread-grid');
+  grid.innerHTML='';
+  selectedCards.forEach((card,i)=>{
+    const pos=SPREAD_POS[i]||`Card ${i+1}`;
+    const item=document.createElement('div');
+    item.className='spread-item';
+    item.innerHTML=`
+      <div class="si-pos">${pos}</div>
+      <div class="spread-card-wrap">
+        <div class="spread-inner" id="si-${i}">
+          <div class="spread-back"></div>
+          <div class="spread-front ${card.isReversed?'reversed':''}">
+            <div class="sf-num">${card.number}</div>
+            <div class="sf-art">${card.symbol}</div>
+            <div class="sf-name">${card.name}</div>
+          </div>
+        </div>
+      </div>
+      <div class="si-name">${card.name}</div>
+      ${card.isReversed?'<div class="si-rev">↻ Reversed</div>':''}
+      <div class="si-meaning">${card.isReversed?card.reversed:card.upright}</div>
+    `;
+    grid.appendChild(item);
+    setTimeout(()=>{
+      const inner=document.getElementById(`si-${i}`);
+      if(inner)inner.classList.add('flipped');
+    },500+i*300);
+  });
+  document.getElementById('spread-overlay').classList.add('open');
+});
+
+document.getElementById('btn-new-reading').addEventListener('click',()=>{
+  document.getElementById('spread-overlay').classList.remove('open');
+  selectedCards=[];
+  buildDeck();
+  renderReadingBar();
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HAND CURSOR & DWELL
+// ══════════════════════════════════════════════════════════════════════════════
+const handCursor=document.getElementById('hand-cursor');
+const dwellRing=document.getElementById('dwell-ring');
+const dwellCircle=document.getElementById('dwell-circle');
+const CIRC=138; // 2π×22
+
+function moveCursor(x,y){
+  handCursor.style.display='block';
+  handCursor.style.left=x+'px';
+  handCursor.style.top=y+'px';
+  dwellRing.style.left=x+'px';
+  dwellRing.style.top=y+'px';
+}
+
+function getCardAtPoint(x,y){
+  // Check all card elements
+  const els=document.querySelectorAll('.card');
+  for(const el of els){
+    const r=el.getBoundingClientRect();
+    if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom){
+      return parseInt(el.dataset.index);
+    }
+  }
+  return -1;
+}
+
+function setHovered(index){
+  if(index===hoveredIndex)return;
+  // clear old
+  if(hoveredIndex>=0){
+    const old=document.querySelector(`.card[data-index="${hoveredIndex}"]`);
+    if(old)old.classList.remove('hovered');
+  }
+  hoveredIndex=index;
+  if(index>=0){
+    const el=document.querySelector(`.card[data-index="${index}"]`);
+    if(el)el.classList.add('hovered');
+  }
+}
+
+function startDwell(index){
+  if(dwellIndex===index)return;
+  clearDwell();
+  dwellIndex=index;
+  dwellProgress=0;
+  dwellRing.style.display='block';
+  const start=Date.now();
+  dwellInterval=setInterval(()=>{
+    const elapsed=Date.now()-start;
+    dwellProgress=Math.min(1,elapsed/DWELL_DURATION);
+    dwellCircle.style.strokeDashoffset=CIRC-(CIRC*dwellProgress);
+    if(dwellProgress>=1){
+      clearDwell();
+      // trigger selection
+      openFocus(dwellIndex);
+      dwellIndex=-1;
+    }
+  },30);
+}
+
+function clearDwell(){
+  if(dwellInterval)clearInterval(dwellInterval);
+  dwellInterval=null;
+  dwellIndex=-1;
+  dwellProgress=0;
+  dwellCircle.style.strokeDashoffset=CIRC;
+  dwellRing.style.display='none';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MOUSE MODE
+// ══════════════════════════════════════════════════════════════════════════════
+let mouseControlEnabled=false;
+
+document.getElementById('ctrl-toggle').addEventListener('click',()=>{
+  mouseControlEnabled=!mouseControlEnabled;
+  const btn=document.getElementById('ctrl-toggle');
+  btn.classList.toggle('mouse-mode',mouseControlEnabled);
+  btn.textContent=mouseControlEnabled?'🖐 Hand Mode':'☽ Mouse Mode';
+  if(!mouseControlEnabled){
+    handCursor.style.display='none';
+    clearDwell();
+  }
+});
+
+// Mouse events for mouse mode
+document.addEventListener('mousemove',e=>{
+  if(!mouseControlEnabled||document.getElementById('focus-overlay').classList.contains('open'))return;
+  moveCursor(e.clientX,e.clientY);
+  const idx=getCardAtPoint(e.clientX,e.clientY);
+  setHovered(idx);
+  if(idx>=0)startDwell(idx);
+  else clearDwell();
+});
+
+document.addEventListener('mouseleave',()=>{
+  if(!mouseControlEnabled)return;
+  handCursor.style.display='none';
+  setHovered(-1);
+  clearDwell();
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MEDIAPIPE HAND TRACKING
+// ══════════════════════════════════════════════════════════════════════════════
+let handTrackingActive=false;
+let lastHandX=-1,lastHandY=-1;
+let smoothX=0,smoothY=0;
+let pinchWasClose=false;
+let lastScrollGesture=0;
+const SMOOTH=0.25;
+
+function initHandTracking(){
+  const videoEl=document.getElementById('video');
+  const camOverlay=document.getElementById('cam-overlay');
+  const camCtx=camOverlay.getContext('2d');
+  const status=document.getElementById('cam-status');
+
+  const hands=new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+  hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:0.7,minTrackingConfidence:0.5});
+
+  hands.onResults(results=>{
+    camOverlay.width=videoEl.videoWidth||180;
+    camOverlay.height=videoEl.videoHeight||135;
+    camCtx.clearRect(0,0,camOverlay.width,camOverlay.height);
+
+    if(!results.multiHandLandmarks||results.multiHandLandmarks.length===0){
+      status.className='';
+      if(!mouseControlEnabled){setHovered(-1);clearDwell();}
+      return;
+    }
+
+    status.className='detecting';
+    const lm=results.multiHandLandmarks[0];
+
+    // Draw skeleton on mini cam
+    camCtx.strokeStyle='rgba(201,168,76,0.6)';
+    camCtx.lineWidth=1.5;
+    const connections=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]];
+    connections.forEach(([a,b])=>{
+      camCtx.beginPath();
+      camCtx.moveTo((1-lm[a].x)*camOverlay.width,lm[a].y*camOverlay.height);
+      camCtx.lineTo((1-lm[b].x)*camOverlay.width,lm[b].y*camOverlay.height);
+      camCtx.stroke();
+    });
+    // dots
+    lm.forEach((p,i)=>{
+      camCtx.beginPath();
+      camCtx.arc((1-p.x)*camOverlay.width,p.y*camOverlay.height,i===8?4:2,0,Math.PI*2);
+      camCtx.fillStyle=i===8?'#C9A84C':'rgba(201,168,76,0.5)';
+      camCtx.fill();
+    });
+
+    if(mouseControlEnabled)return; // hand tracking but user chose mouse mode
+
+    // Index fingertip = landmark 8 (mirrored x)
+    const tip=lm[8];
+    const rawX=(1-tip.x)*window.innerWidth;
+    const rawY=tip.y*window.innerHeight;
+    smoothX=smoothX+(rawX-smoothX)*SMOOTH;
+    smoothY=smoothY+(rawY-smoothY)*SMOOTH;
+
+    moveCursor(smoothX,smoothY);
+
+    // Detect extended index finger (pointing gesture)
+    const indexExtended=lm[8].y<lm[6].y; // tip above PIP
+
+    if(indexExtended&&!document.getElementById('focus-overlay').classList.contains('open')){
+      const idx=getCardAtPoint(smoothX,smoothY);
+      setHovered(idx);
+      if(idx>=0)startDwell(idx);
+      else clearDwell();
+    } else {
+      setHovered(-1);
+      clearDwell();
+    }
+
+    // Detect TWO FINGERS for scroll (index + middle extended)
+    const middleExtended=lm[12].y<lm[10].y;
+    const now=Date.now();
+    if(indexExtended&&middleExtended&&now-lastScrollGesture>500){
+      // determine scroll direction by horizontal position
+      if(smoothX<window.innerWidth*0.35){applyScroll(-3);lastScrollGesture=now;}
+      else if(smoothX>window.innerWidth*0.65){applyScroll(3);lastScrollGesture=now;}
+    }
+
+    // Pinch to select (thumb + index close)
+    const thumb=lm[4],index=lm[8];
+    const dist=Math.hypot((thumb.x-index.x)*window.innerWidth,(thumb.y-index.y)*window.innerHeight);
+    const pinchClose=dist<60;
+    if(pinchClose&&!pinchWasClose&&hoveredIndex>=0&&!document.getElementById('focus-overlay').classList.contains('open')){
+      openFocus(hoveredIndex);
+    }
+    pinchWasClose=pinchClose;
+
+    lastHandX=smoothX;lastHandY=smoothY;
+  });
+
+  const cam=new Camera(videoEl,{
+    onFrame:async()=>{await hands.send({image:videoEl})},
+    width:320,height:240
+  });
+
+  cam.start().then(()=>{
+    handTrackingActive=true;
+    status.className='active';
+    document.getElementById('loading').style.display='none';
+  }).catch(err=>{
+    console.warn('Camera failed:',err);
+    enableMouseFallback();
+  });
+}
+
+function enableMouseFallback(){
+  document.getElementById('loading').style.display='none';
+  document.getElementById('cam-container').style.display='none';
+  mouseControlEnabled=true;
+  const btn=document.getElementById('ctrl-toggle');
+  btn.classList.add('mouse-mode');
+  btn.textContent='🖐 Hand Mode';
+}
+
+document.getElementById('btn-skip-cam').addEventListener('click',enableMouseFallback);
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════════════════════
+buildDeck();
+
+// Try to load MediaPipe after a short delay
+setTimeout(()=>{
+  try{initHandTracking();}
+  catch(e){console.warn('MediaPipe load error:',e);enableMouseFallback();}
+},800);
+
+// Keyboard shortcuts
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight')applyScroll(3);
+  if(e.key==='ArrowLeft')applyScroll(-3);
+  if(e.key==='Escape'){
+    document.getElementById('focus-overlay').classList.remove('open');
+    document.getElementById('spread-overlay').classList.remove('open');
+    document.getElementById('focus-inner').classList.remove('flipped');
+  }
+});
+</script>
+</body>
+</html>
